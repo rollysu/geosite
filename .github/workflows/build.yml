@@ -59,32 +59,41 @@ jobs:
               sha: context.sha
             })
 
-      - name: Read config and resolve categories
-        id: config
-        run: |
-          set -euo pipefail
-
-          # Читаем списки из config.json (поле "lists" первого элемента)
-          KEEP_CATEGORIES=$(jq -r '.[0].lists[]' config.json | tr '\n' ' ')
-          echo "KEEP_CATEGORIES=$KEEP_CATEGORIES" >> $GITHUB_ENV
-          echo "Categories to include: $KEEP_CATEGORIES"
-
       - name: Build geosite.dat
         run: |
           set -euo pipefail
           rm -rf /tmp/out
           mkdir -p /tmp/out /tmp/filtered_data
 
-          while IFS= read -r cat; do
+          copy_with_deps() {
+            local cat="$1"
+            local dest="/tmp/filtered_data"
+
+            [ -f "$dest/$cat" ] && return 0
+
+            local src=""
             if [ -f "community/data/$cat" ]; then
-              cp "community/data/$cat" /tmp/filtered_data/
+              src="community/data/$cat"
               echo "✓ $cat (from v2fly)"
             elif [ -f "./data/$cat" ]; then
-              cp "./data/$cat" /tmp/filtered_data/
+              src="./data/$cat"
               echo "✓ $cat (from ./data/)"
             else
               echo "⚠ WARNING: category '$cat' not found in v2fly or ./data/ !"
+              return 0
             fi
+
+            cp "$src" "$dest/$cat"
+
+            grep -i '^include:' "$src" | sed 's/^include://i' | tr '[:upper:]' '[:lower:]' | while IFS= read -r dep; do
+              dep="${dep%%@*}"
+              dep="${dep// /}"
+              copy_with_deps "$dep"
+            done
+          }
+
+          while IFS= read -r cat; do
+            copy_with_deps "$cat"
           done < <(jq -r '.[0].lists[]' config.json)
 
           rm -rf community/data
