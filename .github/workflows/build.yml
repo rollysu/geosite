@@ -101,7 +101,7 @@ jobs:
 
           rm -rf "$work"
           mkdir -p "$out"
-          cp -a ./community/data/. "$work"/
+          cp -a ./tmp/merged_data/. "$work"/
 
           find "$work" -path "$out" -prune -o -type f -print0 |
           while IFS= read -r -d '' f; do
@@ -161,6 +161,11 @@ jobs:
               }
             ' "$f" > "$tmp"
 
+            if [ ! -s "$tmp" ]; then
+              rm -f "$tmp"
+              continue
+            fi
+
             rel="${f#$work/}"
             rel_noext="${rel%.*}"
             dest="$out/${rel_noext}.mrs"
@@ -177,7 +182,7 @@ jobs:
           out=/tmp/sing-box/rulesets
           rm -rf /tmp/sing-box
           mkdir -p "$src" "$out"
-          cp -a ./community/data/. "$src"/
+          cp -a ./tmp/merged_data/. "$src"/
 
           find "$src" -type f -print0 |
           while IFS= read -r -d '' f; do
@@ -218,6 +223,11 @@ jobs:
               | .rules[0] |= with_entries(select(.value | length > 0))
               | if (.rules[0] | length) == 0 then .rules = [] else . end
             ' > "$tmp_json"
+
+            if [ "$(jq '.rules | length' "$tmp_json")" = "0" ]; then
+              rm -f "$tmp_json"
+              continue
+            fi
 
             rel="${f#$src/}"
             rel_noext="${rel%.*}"
