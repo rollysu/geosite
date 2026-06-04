@@ -59,21 +59,31 @@ jobs:
               sha: context.sha
             })
 
-      - name: Build geosite.dat
+      - name: Build geosite.dat and export flat lists
         run: |
           set -euo pipefail
           rm -rf /tmp/out /tmp/merged_data
           mkdir -p /tmp/out /tmp/merged_data
 
+          # Объединяем v2fly/data и наш ./data (наш перезаписывает при совпадении)
           cp -a community/data/. /tmp/merged_data/
           [ -d ./data ] && cp -a ./data/. /tmp/merged_data/
 
+          # Список категорий из config.json через запятую для -exportlists
+          EXPORT_LISTS=$(jq -r '.[0].lists | join(",")' config.json)
+
           pushd community >/dev/null
-          go run ./ -datapath=/tmp/merged_data -outputdir=/tmp/out -datprofile=../config.json
+          go run ./ \
+            -datapath=/tmp/merged_data \
+            -outputdir=/tmp/out \
+            -datprofile=../config.json \
+            -exportlists="$EXPORT_LISTS"
           popd >/dev/null
 
           test -s /tmp/out/geosite.dat
           cp -f /tmp/out/geosite.dat ./geosite.dat
+          # /tmp/out/<category>.txt — плоские файлы с резолвнутыми доменами,
+          # используются далее для сборки .mrs и .srs
 
       - name: Install Mihomo (latest stable)
         run: |
@@ -100,68 +110,47 @@ jobs:
           mkdir -p "$out"
 
           while IFS= read -r cat; do
-            [ -f "/tmp/merged_data/$cat" ] || continue
+            # builder пишет файлы в нижнем регистре
+            txt="/tmp/out/${cat}.txt"
+            [ -f "$txt" ] || { echo "⚠ $cat.txt not found, skipping"; continue; }
+
             tmp="$(mktemp)"
             awk '
               function trim(s){ sub(/^[ \t]+/,"",s); sub(/[ \t]+$/,"",s); return s }
               {
                 gsub(/\r/,"")
                 s=$0
-
                 sub(/[ \t]*#.*/, "", s)
                 sub(/[ \t]*\/\/.*/, "", s)
                 sub(/[ \t]*@.*/, "", s)
-
                 s=trim(s)
                 gsub(/[ \t]+/, "", s)
                 s=tolower(s)
-
                 if (s == "") next
-
                 if (s ~ /^full:/) {
                   sub(/^full:/, "", s)
                   if (s != "") print s
                   next
                 }
-
                 if (s ~ /^keyword:/) {
                   sub(/^keyword:/, "", s)
                   sub(/^\./, "", s)
-                  if (s != "") {
-                    s = "+." s
-                    sub(/\.$/, ".*", s)
-                    print s
-                  }
+                  if (s != "") { s = "+." s; sub(/\.$/, ".*", s); print s }
                   next
                 }
-
                 if (s ~ /^domain:/) {
                   sub(/^domain:/, "", s)
                   sub(/^\./, "", s)
-                  if (s != "") {
-                    s = "+." s
-                    sub(/\.$/, ".*", s)
-                    print s
-                  }
+                  if (s != "") { s = "+." s; sub(/\.$/, ".*", s); print s }
                   next
                 }
-
                 if (s ~ /^[a-z0-9_-]+:/) next
-
                 sub(/^\./, "", s)
-                if (s != "") {
-                  s = "+." s
-                  sub(/\.$/, ".*", s)
-                  print s
-                }
+                if (s != "") { s = "+." s; sub(/\.$/, ".*", s); print s }
               }
-            ' "/tmp/merged_data/$cat" > "$tmp"
+            ' "$txt" > "$tmp"
 
-            if [ ! -s "$tmp" ]; then
-              rm -f "$tmp"
-              continue
-            fi
-
+            if [ ! -s "$tmp" ]; then rm -f "$tmp"; continue; fi
             mihomo convert-ruleset domain text "$tmp" "$out/${cat}.mrs"
             rm -f "$tmp"
           done < <(jq -r '.[0].lists[]' config.json)
@@ -174,7 +163,9 @@ jobs:
           mkdir -p "$out"
 
           while IFS= read -r cat; do
-            [ -f "/tmp/merged_data/$cat" ] || continue
+            txt="/tmp/out/${cat}.txt"
+            [ -f "$txt" ] || { echo "⚠ $cat.txt not found, skipping"; continue; }
+
             tmp_json="$(mktemp)"
             awk '
               function trim(s){ sub(/^[ \t]+/,"",s); sub(/[ \t]+$/,"",s); return s }
@@ -192,15 +183,13 @@ jobs:
                 if (t ~ /^\/\//) next
                 if (t ~ /^#/) next
                 if (t ~ /^include:/) next
-
                 if (t ~ /^full:/)   { v=strip_tail(substr(t,6)); sub(/^\./,"",v); if(v!="") print "domain"  "\t" v; next }
                 if (t ~ /^domain:/) { v=strip_tail(substr(t,8)); sub(/^\./,"",v); if(v!="") print "suffix"  "\t" v; next }
                 if (t ~ /^keyword:/){ v=strip_tail(substr(t,9));                   if(v!="") print "keyword" "\t" v; next }
                 if (t ~ /^regexp:/) { v=strip_tail(substr(t,8));                   if(v!="") print "regex"   "\t" v; next }
-
                 v=t; sub(/^\./,"",v); if(v!="") print "suffix" "\t" v
               }
-            ' "/tmp/merged_data/$cat" | jq -Rn '
+            ' "$txt" | jq -Rn '
               def add($k; $v): .rules[0][$k] = ((.rules[0][$k] // []) + [$v]);
               reduce (inputs | split("\t")) as $it ({"version":3,"rules":[{}]};
                 if   $it[0]=="domain"  then add("domain";         $it[1])
