@@ -22,19 +22,19 @@ jobs:
       CURL: "curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused"
     steps:
       - name: Checkout codebase
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
       - name: Checkout geosite builder
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           repository: v2fly/domain-list-community
           path: community
           fetch-depth: 1
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v5
         with:
           go-version-file: community/go.mod
           cache: true
@@ -48,7 +48,7 @@ jobs:
 
       - name: Create Tag
         if: github.ref_name == 'master'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v7
         with:
           script: |
             const { DAILY_TAG } = process.env
@@ -59,26 +59,33 @@ jobs:
               sha: context.sha
             })
 
+      - name: Read config and resolve categories
+        id: config
+        run: |
+          set -euo pipefail
+
+          # Читаем списки из config.json (поле "lists" первого элемента)
+          KEEP_CATEGORIES=$(jq -r '.[0].lists[]' config.json | tr '\n' ' ')
+          echo "KEEP_CATEGORIES=$KEEP_CATEGORIES" >> $GITHUB_ENV
+          echo "Categories to include: $KEEP_CATEGORIES"
+
       - name: Build geosite.dat
         run: |
           set -euo pipefail
           rm -rf /tmp/out
-          mkdir -p /tmp/out
+          mkdir -p /tmp/out /tmp/filtered_data
 
-          KEEP_CATEGORIES="telegram youtube openai twitter spotify netflix discord linguee github tiktok category-porn google-gemini supercell roblox rutracker deviantart protonmail cloudflare anthropic meta patreon category-ai-!cn"
-
-          mkdir -p /tmp/filtered_data
-          for cat in $KEEP_CATEGORIES; do
+          while IFS= read -r cat; do
             if [ -f "community/data/$cat" ]; then
               cp "community/data/$cat" /tmp/filtered_data/
+              echo "✓ $cat (from v2fly)"
+            elif [ -f "./data/$cat" ]; then
+              cp "./data/$cat" /tmp/filtered_data/
+              echo "✓ $cat (from ./data/)"
             else
-              echo "Предупреждение: категория $cat не найдена в базе v2fly!"
+              echo "⚠ WARNING: category '$cat' not found in v2fly or ./data/ !"
             fi
-          done
-
-          if [ -d "./data" ]; then
-            cp -a ./data/. /tmp/filtered_data/
-          fi
+          done < <(jq -r '.[0].lists[]' config.json)
 
           rm -rf community/data
           mv /tmp/filtered_data community/data
@@ -214,12 +221,12 @@ jobs:
                 if (t ~ /^#/) next
                 if (t ~ /^include:/) next
 
-                if (t ~ /^full:/)   { v=strip_tail(substr(t,6)); sub(/^\./,"",v); if(v!="") print "domain"  v; next }
-                if (t ~ /^domain:/) { v=strip_tail(substr(t,8)); sub(/^\./,"",v); if(v!="") print "suffix"  v; next }
-                if (t ~ /^keyword:/){ v=strip_tail(substr(t,9));                   if(v!="") print "keyword" v; next }
-                if (t ~ /^regexp:/) { v=strip_tail(substr(t,8));                   if(v!="") print "regex"   v; next }
+                if (t ~ /^full:/)   { v=strip_tail(substr(t,6)); sub(/^\./,"",v); if(v!="") print "domain"  "\t" v; next }
+                if (t ~ /^domain:/) { v=strip_tail(substr(t,8)); sub(/^\./,"",v); if(v!="") print "suffix"  "\t" v; next }
+                if (t ~ /^keyword:/){ v=strip_tail(substr(t,9));                   if(v!="") print "keyword" "\t" v; next }
+                if (t ~ /^regexp:/) { v=strip_tail(substr(t,8));                   if(v!="") print "regex"   "\t" v; next }
 
-                v=t; sub(/^\./,"",v); if(v!="") print "keyword" v
+                v=t; sub(/^\./,"",v); if(v!="") print "suffix" "\t" v
               }
             ' "$f" | jq -Rn '
               def add($k; $v): .rules[0][$k] = ((.rules[0][$k] // []) + [$v]);
@@ -270,9 +277,9 @@ jobs:
           git commit -m "Release ${{ env.DAILY_TAG }}"
           git remote add origin "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
           git push -f -u origin release
-          
+
           rm -rf .git
-          
+
           cd .. || exit 1
           git config --local user.name "${{ github.actor }}"
           git config --local user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
@@ -283,7 +290,7 @@ jobs:
 
       - name: MASTER Publish GitHub Release
         if: github.ref_name == 'master'
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.DAILY_TAG }}
           name: ${{ env.DAILY_TAG }}
@@ -330,9 +337,9 @@ jobs:
           git commit -m "Test Release $(date -u +%Y%m%d%H%M)"
           git remote add origin "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
           git push -f -u origin test-release
-          
+
           rm -rf .git
-          
+
           cd .. || exit 1
           git config --local user.name "${{ github.actor }}"
           git config --local user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
