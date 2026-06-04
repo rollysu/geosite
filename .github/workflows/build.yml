@@ -96,15 +96,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          work=/tmp/mihomo
-          out="$work/rulesets"
-
-          rm -rf "$work"
+          out=/tmp/mihomo/rulesets
           mkdir -p "$out"
-          cp -a /tmp/merged_data/. "$work"/
 
-          find "$work" -path "$out" -prune -o -type f -print0 |
-          while IFS= read -r -d '' f; do
+          while IFS= read -r cat; do
+            [ -f "/tmp/merged_data/$cat" ] || continue
             tmp="$(mktemp)"
             awk '
               function trim(s){ sub(/^[ \t]+/,"",s); sub(/[ \t]+$/,"",s); return s }
@@ -159,33 +155,26 @@ jobs:
                   print s
                 }
               }
-            ' "$f" > "$tmp"
+            ' "/tmp/merged_data/$cat" > "$tmp"
 
             if [ ! -s "$tmp" ]; then
               rm -f "$tmp"
               continue
             fi
 
-            rel="${f#$work/}"
-            rel_noext="${rel%.*}"
-            dest="$out/${rel_noext}.mrs"
-            mkdir -p "$(dirname "$dest")"
-            mihomo convert-ruleset domain text "$tmp" "$dest"
+            mihomo convert-ruleset domain text "$tmp" "$out/${cat}.mrs"
             rm -f "$tmp"
-          done
+          done < <(jq -r '.[0].lists[]' config.json)
 
       - name: Build sing-box .srs (geosite)
         run: |
           set -euo pipefail
 
-          src=/tmp/sing-box/src
           out=/tmp/sing-box/rulesets
-          rm -rf /tmp/sing-box
-          mkdir -p "$src" "$out"
-          cp -a /tmp/merged_data/. "$src"/
+          mkdir -p "$out"
 
-          find "$src" -type f -print0 |
-          while IFS= read -r -d '' f; do
+          while IFS= read -r cat; do
+            [ -f "/tmp/merged_data/$cat" ] || continue
             tmp_json="$(mktemp)"
             awk '
               function trim(s){ sub(/^[ \t]+/,"",s); sub(/[ \t]+$/,"",s); return s }
@@ -211,7 +200,7 @@ jobs:
 
                 v=t; sub(/^\./,"",v); if(v!="") print "suffix" "\t" v
               }
-            ' "$f" | jq -Rn '
+            ' "/tmp/merged_data/$cat" | jq -Rn '
               def add($k; $v): .rules[0][$k] = ((.rules[0][$k] // []) + [$v]);
               reduce (inputs | split("\t")) as $it ({"version":3,"rules":[{}]};
                 if   $it[0]=="domain"  then add("domain";         $it[1])
@@ -229,13 +218,9 @@ jobs:
               continue
             fi
 
-            rel="${f#$src/}"
-            rel_noext="${rel%.*}"
-            dest="$out/${rel_noext}.srs"
-            mkdir -p "$(dirname "$dest")"
-            sing-box rule-set compile --output "$dest" "$tmp_json"
+            sing-box rule-set compile --output "$out/${cat}.srs" "$tmp_json"
             rm -f "$tmp_json"
-          done
+          done < <(jq -r '.[0].lists[]' config.json)
 
       - name: main Prepare release directory and archives
         if: github.ref_name == 'main'
