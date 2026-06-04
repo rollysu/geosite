@@ -1,0 +1,33 @@
+[
+  {
+    "name": "geosite.dat",
+    "mode": "allowlist",
+    "lists": [
+      "telegram",
+      "youtube",
+      "openai",
+      "twitter",
+      "netflix",
+      "discord",
+      "linguee",
+      "github",
+      "tiktok",
+      "category-porn",
+      "google-gemini",
+      "supercell",
+      "roblox",
+      "rutracker",
+      "deviantart",
+      "protonmail",
+      "cloudflare",
+      "anthropic",
+      "meta",
+      "patreon",
+      "category-ai-!cn",
+      "spotify",
+      "additional",
+      "category-ru",
+      "private"
+    ]
+  }
+]

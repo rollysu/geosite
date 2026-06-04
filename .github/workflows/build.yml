@@ -1,0 +1,333 @@
+name: Build geosite
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - test
+      - main
+    paths-ignore:
+      - "README.md"
+      - ".gitignore"
+      - "LICENSE"
+      - "release/**"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    env:
+      CURL: "curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused"
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Checkout geosite builder
+        uses: actions/checkout@v4
+        with:
+          repository: v2fly/domain-list-community
+          path: community
+          fetch-depth: 1
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: community/go.mod
+          cache: true
+          cache-dependency-path: community/go.sum
+
+      - name: Set tag
+        if: github.ref_name == 'main'
+        run: |
+          DAILY_TAG=$(date +%Y%m%d%H%M)
+          echo "DAILY_TAG=$DAILY_TAG" >> $GITHUB_ENV
+
+      - name: Create Tag
+        if: github.ref_name == 'main'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { DAILY_TAG } = process.env
+            await github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `refs/tags/${DAILY_TAG}`,
+              sha: context.sha
+            })
+
+      - name: Build geosite.dat
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/out /tmp/merged_data
+          mkdir -p /tmp/out /tmp/merged_data
+
+          cp -a community/data/. /tmp/merged_data/
+          [ -d ./data ] && cp -a ./data/. /tmp/merged_data/
+
+          pushd community >/dev/null
+          go run ./ -datapath=/tmp/merged_data -outputdir=/tmp/out -datprofile=../config.json
+          popd >/dev/null
+
+          test -s /tmp/out/geosite.dat
+          cp -f /tmp/out/geosite.dat ./geosite.dat
+
+      - name: Install Mihomo (latest stable)
+        run: |
+          set -euo pipefail
+          ARCH=$(dpkg --print-architecture)
+          LATEST_URL=$(${{ env.CURL }} https://api.github.com/repos/MetaCubeX/mihomo/releases/latest \
+            | grep -oP '"browser_download_url":\s*"\K[^"]*mihomo-linux-'"$ARCH"'-[^"]*\.deb(?=")' \
+            | head -n1)
+          echo "Downloading: $LATEST_URL"
+          ${{ env.CURL }} -o /tmp/mihomo.deb "$LATEST_URL"
+          sudo dpkg -i /tmp/mihomo.deb || sudo apt-get install -f -y
+          rm -f /tmp/mihomo.deb
+
+      - name: Install sing-box
+        run: |
+          set -euo pipefail
+          ${{ env.CURL }} https://sing-box.app/install.sh | sudo -E sh -s -- --version 1.12.12
+
+      - name: Build .mrs
+        run: |
+          set -euo pipefail
+
+          out=/tmp/mihomo/rulesets
+          mkdir -p "$out"
+
+          while IFS= read -r cat; do
+            [ -f "/tmp/merged_data/$cat" ] || continue
+            tmp="$(mktemp)"
+            awk '
+              function trim(s){ sub(/^[ \t]+/,"",s); sub(/[ \t]+$/,"",s); return s }
+              {
+                gsub(/\r/,"")
+                s=$0
+
+                sub(/[ \t]*#.*/, "", s)
+                sub(/[ \t]*\/\/.*/, "", s)
+                sub(/[ \t]*@.*/, "", s)
+
+                s=trim(s)
+                gsub(/[ \t]+/, "", s)
+                s=tolower(s)
+
+                if (s == "") next
+
+                if (s ~ /^full:/) {
+                  sub(/^full:/, "", s)
+                  if (s != "") print s
+                  next
+                }
+
+                if (s ~ /^keyword:/) {
+                  sub(/^keyword:/, "", s)
+                  sub(/^\./, "", s)
+                  if (s != "") {
+                    s = "+." s
+                    sub(/\.$/, ".*", s)
+                    print s
+                  }
+                  next
+                }
+
+                if (s ~ /^domain:/) {
+                  sub(/^domain:/, "", s)
+                  sub(/^\./, "", s)
+                  if (s != "") {
+                    s = "+." s
+                    sub(/\.$/, ".*", s)
+                    print s
+                  }
+                  next
+                }
+
+                if (s ~ /^[a-z0-9_-]+:/) next
+
+                sub(/^\./, "", s)
+                if (s != "") {
+                  s = "+." s
+                  sub(/\.$/, ".*", s)
+                  print s
+                }
+              }
+            ' "/tmp/merged_data/$cat" > "$tmp"
+
+            if [ ! -s "$tmp" ]; then
+              rm -f "$tmp"
+              continue
+            fi
+
+            mihomo convert-ruleset domain text "$tmp" "$out/${cat}.mrs"
+            rm -f "$tmp"
+          done < <(jq -r '.[0].lists[]' config.json)
+
+      - name: Build sing-box .srs (geosite)
+        run: |
+          set -euo pipefail
+
+          out=/tmp/sing-box/rulesets
+          mkdir -p "$out"
+
+          while IFS= read -r cat; do
+            [ -f "/tmp/merged_data/$cat" ] || continue
+            tmp_json="$(mktemp)"
+            awk '
+              function trim(s){ sub(/^[ \t]+/,"",s); sub(/[ \t]+$/,"",s); return s }
+              function strip_tail(s){
+                gsub(/\r/,"",s)
+                s=trim(s)
+                sub(/[ \t]*#.*/, "", s)
+                sub(/[ \t]*\/\/.*/, "", s)
+                sub(/[ \t]*@.*/, "", s)
+                return trim(s)
+              }
+              {
+                t = strip_tail($0)
+                if (t == "") next
+                if (t ~ /^\/\//) next
+                if (t ~ /^#/) next
+                if (t ~ /^include:/) next
+
+                if (t ~ /^full:/)   { v=strip_tail(substr(t,6)); sub(/^\./,"",v); if(v!="") print "domain"  "\t" v; next }
+                if (t ~ /^domain:/) { v=strip_tail(substr(t,8)); sub(/^\./,"",v); if(v!="") print "suffix"  "\t" v; next }
+                if (t ~ /^keyword:/){ v=strip_tail(substr(t,9));                   if(v!="") print "keyword" "\t" v; next }
+                if (t ~ /^regexp:/) { v=strip_tail(substr(t,8));                   if(v!="") print "regex"   "\t" v; next }
+
+                v=t; sub(/^\./,"",v); if(v!="") print "suffix" "\t" v
+              }
+            ' "/tmp/merged_data/$cat" | jq -Rn '
+              def add($k; $v): .rules[0][$k] = ((.rules[0][$k] // []) + [$v]);
+              reduce (inputs | split("\t")) as $it ({"version":3,"rules":[{}]};
+                if   $it[0]=="domain"  then add("domain";         $it[1])
+                elif $it[0]=="suffix"  then add("domain_suffix";  $it[1])
+                elif $it[0]=="keyword" then add("domain_keyword"; $it[1])
+                elif $it[0]=="regex"   then add("domain_regex";   $it[1])
+                else . end
+              )
+              | .rules[0] |= with_entries(select(.value | length > 0))
+              | if (.rules[0] | length) == 0 then .rules = [] else . end
+            ' > "$tmp_json"
+
+            if [ "$(jq '.rules | length' "$tmp_json")" = "0" ]; then
+              rm -f "$tmp_json"
+              continue
+            fi
+
+            sing-box rule-set compile --output "$out/${cat}.srs" "$tmp_json"
+            rm -f "$tmp_json"
+          done < <(jq -r '.[0].lists[]' config.json)
+
+      - name: main Prepare release directory and archives
+        if: github.ref_name == 'main'
+        run: |
+          set -euo pipefail
+          rm -rf release
+          mkdir -p release/mihomo release/sing-box
+          cp ./geosite.dat release/
+          cp -a /tmp/mihomo/rulesets/.   release/mihomo/
+          cp -a /tmp/sing-box/rulesets/. release/sing-box/
+          rm -f /tmp/mihomo.tar.gz /tmp/sing-box.tar.gz
+          tar -czf release/mihomo.tar.gz   -C release mihomo
+          tar -czf release/sing-box.tar.gz -C release sing-box
+          test -s release/mihomo.tar.gz
+          test -s release/sing-box.tar.gz
+          sha256sum release/geosite.dat > release/geosite.dat.sha256
+
+      - name: main Push to release branch and update main
+        if: github.ref_name == 'main'
+        run: |
+          cd release || exit 1
+          git init
+          git config --local user.name "${{ github.actor }}"
+          git config --local user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
+          git checkout -b release
+          git add -A
+          git commit -m "Release ${{ env.DAILY_TAG }}"
+          git remote add origin "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
+          git push -f -u origin release
+
+          rm -rf .git
+
+          cd .. || exit 1
+          git config --local user.name "${{ github.actor }}"
+          git config --local user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
+          git checkout main
+          git add release/
+          git commit -m "Release ${{ env.DAILY_TAG }}" || echo "No changes to commit"
+          git push origin main
+
+      - name: main Publish GitHub Release
+        if: github.ref_name == 'main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.DAILY_TAG }}
+          name: ${{ env.DAILY_TAG }}
+          prerelease: false
+          draft: false
+          files: |
+            release/geosite.dat
+            release/geosite.dat.sha256
+            release/*.tar.gz
+
+      - name: main Purge CDN for release and updated main branches
+        if: github.ref_name == 'main'
+        run: |
+          set -euo pipefail
+          cd release || exit 1
+          find . -type f -not -path "./.git/*" -print0 | while IFS= read -r -d '' f; do
+            rel="${f#./}"
+            ${{ env.CURL }} -i "https://purge.jsdelivr.net/gh/${{ github.repository }}/release/${rel}"
+            ${{ env.CURL }} -i "https://purge.jsdelivr.net/gh/${{ github.repository }}@main/release/${rel}"
+            ${{ env.CURL }} -i "https://purge.jsdelivr.net/gh/${{ github.repository }}@release/${rel}"
+            ${{ env.CURL }} -i "https://purge.jsdelivr.net/gh/${{ github.repository }}@${{ env.DAILY_TAG }}/release/${rel}"
+          done
+
+      - name: TEST Prepare release directory
+        if: github.ref_name == 'test'
+        run: |
+          set -euo pipefail
+          rm -rf release
+          mkdir -p release/mihomo release/sing-box
+          cp ./geosite.dat release/
+          cp -a /tmp/mihomo/rulesets/.   release/mihomo/
+          cp -a /tmp/sing-box/rulesets/. release/sing-box/
+          sha256sum release/geosite.dat > release/geosite.dat.sha256
+
+      - name: TEST Push to test-release branch & update test branch
+        if: github.ref_name == 'test'
+        run: |
+          cd release || exit 1
+          git init
+          git config --local user.name "${{ github.actor }}"
+          git config --local user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
+          git checkout -b test-release
+          git add -A
+          git commit -m "Test Release $(date -u +%Y%m%d%H%M)"
+          git remote add origin "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
+          git push -f -u origin test-release
+
+          rm -rf .git
+
+          cd .. || exit 1
+          git config --local user.name "${{ github.actor }}"
+          git config --local user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
+          git checkout -B test
+          git add release/
+          git commit -m "Test Release $(date -u +%Y%m%d%H%M)" || echo "No changes to commit"
+          git push origin test
+
+      - name: TEST Purge CDN for test-release and updated test branches
+        if: github.ref_name == 'test'
+        run: |
+          set -euo pipefail
+          cd release || exit 1
+          find . -type f -not -path "./.git/*" -print0 | while IFS= read -r -d '' f; do
+            rel="${f#./}"
+            ${{ env.CURL }} -i "https://purge.jsdelivr.net/gh/${{ github.repository }}@test/release/${rel}"
+            ${{ env.CURL }} -i "https://purge.jsdelivr.net/gh/${{ github.repository }}@test-release/${rel}"
+          done
