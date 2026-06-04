@@ -62,49 +62,18 @@ jobs:
       - name: Build geosite.dat
         run: |
           set -euo pipefail
-          rm -rf /tmp/out
-          mkdir -p /tmp/out /tmp/filtered_data
+          rm -rf /tmp/out /tmp/merged_data
+          mkdir -p /tmp/out /tmp/merged_data
 
-          copy_with_deps() {
-            local cat="$1"
-            local dest="/tmp/filtered_data"
-
-            [ -f "$dest/$cat" ] && return 0
-
-            local src=""
-            if [ -f "community/data/$cat" ]; then
-              src="community/data/$cat"
-              echo "✓ $cat (from v2fly)"
-            elif [ -f "./data/$cat" ]; then
-              src="./data/$cat"
-              echo "✓ $cat (from ./data/)"
-            else
-              echo "⚠ WARNING: category '$cat' not found in v2fly or ./data/ !"
-              return 0
-            fi
-
-            cp "$src" "$dest/$cat"
-
-            while IFS= read -r dep; do
-              dep="${dep%%@*}"
-              dep="${dep// /}"
-              [ -n "$dep" ] && copy_with_deps "$dep"
-            done < <(grep -i '^include:' "$src" | sed 's/^[Ii][Nn][Cc][Ll][Uu][Dd][Ee]://i' | tr '[:upper:]' '[:lower:]')
-          }
-
-          while IFS= read -r cat; do
-            copy_with_deps "$cat"
-          done < <(jq -r '.[0].lists[]' config.json)
-
-          rm -rf community/data
-          mv /tmp/filtered_data community/data
+          cp -a community/data/. /tmp/merged_data/
+          [ -d ./data ] && cp -a ./data/. /tmp/merged_data/
 
           pushd community >/dev/null
-          go run ./ -outputdir=/tmp/out
+          go run ./ -datapath=/tmp/merged_data -outputdir=/tmp/out -datprofile=../config.json
           popd >/dev/null
 
-          test -s /tmp/out/dlc.dat
-          cp -f /tmp/out/dlc.dat ./geosite.dat
+          test -s /tmp/out/geosite.dat
+          cp -f /tmp/out/geosite.dat ./geosite.dat
 
       - name: Install Mihomo (latest stable)
         run: |
