@@ -85,11 +85,11 @@ jobs:
 
             cp "$src" "$dest/$cat"
 
-            grep -i '^include:' "$src" | sed 's/^include://i' | tr '[:upper:]' '[:lower:]' | while IFS= read -r dep; do
+            while IFS= read -r dep; do
               dep="${dep%%@*}"
               dep="${dep// /}"
-              copy_with_deps "$dep"
-            done
+              [ -n "$dep" ] && copy_with_deps "$dep"
+            done < <(grep -i '^include:' "$src" | sed 's/^[Ii][Nn][Cc][Ll][Uu][Dd][Ee]://i' | tr '[:upper:]' '[:lower:]')
           }
 
           while IFS= read -r cat; do
