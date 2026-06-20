@@ -1,0 +1,15 @@
+domain:apkmirror.com
+domain:emptymirrors.com
+domain:grokipedia.com
+domain:grokusercontent.com
+domain:nexusmods.com
+domain:nnmclub.to
+domain:nnmstatic.win
+domain:notfans.net
+domain:revanced.app
+domain:sinkrewe.com
+domain:sndcdn.com
+domain:soundcloud.cloud
+domain:soundcloud.com
+domain:speedtest.net
+domain:wixmp.com
