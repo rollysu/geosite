@@ -67,11 +67,9 @@ jobs:
           rm -rf /tmp/out /tmp/merged_data
           mkdir -p /tmp/out /tmp/merged_data
 
-          # Объединяем v2fly/data и наш ./data (наш перезаписывает при совпадении)
           cp -a community/data/. /tmp/merged_data/
           [ -d ./data ] && cp -a ./data/. /tmp/merged_data/
 
-          # Список категорий из config.json через запятую для -exportlists
           EXPORT_LISTS=$(jq -r '.[0].lists | join(",")' config.json)
 
           pushd community >/dev/null
@@ -84,8 +82,6 @@ jobs:
 
           test -s /tmp/out/geosite.dat
           cp -f /tmp/out/geosite.dat ./geosite.dat
-          # /tmp/out/<category>.txt — плоские файлы с резолвнутыми доменами,
-          # используются далее для сборки .mrs и .srs
 
       - name: Install Mihomo (latest stable)
         run: |
@@ -112,7 +108,6 @@ jobs:
           mkdir -p "$out"
 
           while IFS= read -r cat; do
-            # builder пишет файлы в нижнем регистре
             txt="/tmp/out/${cat}.txt"
             [ -f "$txt" ] || { echo "⚠ $cat.txt not found, skipping"; continue; }
 
