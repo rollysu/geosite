@@ -14,6 +14,7 @@ domain:cerebras.ai
 domain:chat.com
 domain:chatgpt.com
 domain:chatgpt.livekit.cloud
+domain:chatgpt.site
 domain:chutes.ai
 domain:cici.com:@!cn
 domain:ciciai.com:@!cn
