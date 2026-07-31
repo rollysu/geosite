@@ -858,6 +858,7 @@ domain:yaplakal.com
 domain:yastat.net
 domain:yastatic.net
 domain:yclients.com
+domain:yndx.net
 domain:youla.io
 domain:yourgood.app
 domain:zvuk-b2b.com
