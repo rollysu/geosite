@@ -119,31 +119,28 @@ jobs:
                 s=$0
                 sub(/[ \t]*#.*/, "", s)
                 sub(/[ \t]*\/\/.*/, "", s)
-                sub(/[ \t]*@.*/, "", s)
                 s=trim(s)
                 gsub(/[ \t]+/, "", s)
                 s=tolower(s)
                 if (s == "") next
-                if (s ~ /^full:/) {
-                  sub(/^full:/, "", s)
-                  if (s != "") print s
-                  next
-                }
-                if (s ~ /^keyword:/) {
-                  sub(/^keyword:/, "", s)
-                  sub(/^\./, "", s)
-                  if (s != "") { s = "+." s; sub(/\.$/, ".*", s); print s }
-                  next
-                }
-                if (s ~ /^domain:/) {
-                  sub(/^domain:/, "", s)
-                  sub(/^\./, "", s)
-                  if (s != "") { s = "+." s; sub(/\.$/, ".*", s); print s }
-                  next
-                }
-                if (s ~ /^[a-z0-9_-]+:/) next
+
+                type="domain"
+                if (s ~ /^full:/)    { type="full";    s=substr(s,6) }
+                else if (s ~ /^domain:/)  { type="domain";  s=substr(s,8) }
+                else if (s ~ /^keyword:/) { type="keyword"; s=substr(s,9) }
+                else if (s ~ /^regexp:/)  { next }
+                else if (s ~ /^include:/) { next }
+
+                sub(/:.*/, "", s)
+                if (s == "") next
+
+                if (type == "full") { print s; next }
+
                 sub(/^\./, "", s)
-                if (s != "") { s = "+." s; sub(/\.$/, ".*", s); print s }
+                if (s == "") next
+                s = "+." s
+                sub(/\.$/, ".*", s)
+                print s
               }
             ' "$txt" > "$tmp"
 
@@ -166,25 +163,24 @@ jobs:
             tmp_json="$(mktemp)"
             awk '
               function trim(s){ sub(/^[ \t]+/,"",s); sub(/[ \t]+$/,"",s); return s }
-              function strip_tail(s){
+              function strip_comment(s){
                 gsub(/\r/,"",s)
                 s=trim(s)
                 sub(/[ \t]*#.*/, "", s)
                 sub(/[ \t]*\/\/.*/, "", s)
-                sub(/[ \t]*@.*/, "", s)
                 return trim(s)
               }
               {
-                t = strip_tail($0)
+                t = strip_comment($0)
                 if (t == "") next
                 if (t ~ /^\/\//) next
                 if (t ~ /^#/) next
                 if (t ~ /^include:/) next
-                if (t ~ /^full:/)   { v=strip_tail(substr(t,6)); sub(/^\./,"",v); if(v!="") print "domain"  "\t" v; next }
-                if (t ~ /^domain:/) { v=strip_tail(substr(t,8)); sub(/^\./,"",v); if(v!="") print "suffix"  "\t" v; next }
-                if (t ~ /^keyword:/){ v=strip_tail(substr(t,9));                   if(v!="") print "keyword" "\t" v; next }
-                if (t ~ /^regexp:/) { v=strip_tail(substr(t,8));                   if(v!="") print "regex"   "\t" v; next }
-                v=t; sub(/^\./,"",v); if(v!="") print "suffix" "\t" v
+                if (t ~ /^full:/)    { v=substr(t,6); sub(/:.*/,"",v); sub(/^\./,"",v); if(v!="") print "domain"  "\t" v; next }
+                if (t ~ /^domain:/)  { v=substr(t,8); sub(/:.*/,"",v); sub(/^\./,"",v); if(v!="") print "suffix"  "\t" v; next }
+                if (t ~ /^keyword:/) { v=substr(t,9); sub(/:.*/,"",v);                 if(v!="") print "keyword" "\t" v; next }
+                if (t ~ /^regexp:/)  { v=substr(t,8); sub(/:.*/,"",v);                 if(v!="") print "regex"   "\t" v; next }
+                v=t; sub(/:.*/,"",v); sub(/^\./,"",v); if(v!="") print "suffix" "\t" v
               }
             ' "$txt" | jq -Rn '
               def add($k; $v): .rules[0][$k] = ((.rules[0][$k] // []) + [$v]);
