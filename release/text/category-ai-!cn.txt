@@ -12,6 +12,7 @@ domain:antigravity.google
 domain:antspace.dev
 domain:anythingllm.com
 domain:arena.ai
+domain:artificialanalysis.ai
 domain:bard.google.com
 domain:cerebras.ai
 domain:chat.com
@@ -37,6 +38,7 @@ domain:claudepages.dev
 domain:claudestudio.com
 domain:claudeusercontent.com
 domain:clawhub.ai
+domain:cline.bot
 domain:clipdrop.co
 domain:codeium.com
 domain:codeiumdata.com
@@ -47,6 +49,8 @@ domain:cohere.com
 domain:comfy.org
 domain:comfyci.org
 domain:comfyregistry.org
+domain:commandcode.ai
+domain:context7.com
 domain:copilot-stg.com
 domain:copilot.cloud.microsoft
 domain:copilot.com
@@ -116,6 +120,7 @@ domain:manus.im
 domain:manuscdn.com
 domain:marscode.com:@!cn
 domain:meta.ai
+domain:metaaiusercontent.com
 domain:metaaivm.com
 domain:midjourney.com
 domain:minimax.io
@@ -128,6 +133,7 @@ domain:notebook.google.com
 domain:notebooklm.google
 domain:notebooklm.google.com
 domain:notegpt.io
+domain:nousresearch.com
 domain:novelai.net
 domain:oaistatic.com
 domain:oaistatsig.com
@@ -176,7 +182,10 @@ full:alkalicore-pa.clients6.google.com
 full:alkalimakersuite-pa.clients6.google.com
 full:antigravity-pa.googleapis.com
 full:antigravity.googleapis.com
-full:browser-intake-datadoghq.com:@ads
+full:appsgenaiserver-pa.clients.google.com
+full:appsgenaiserver-pa.clients6.google.com
+full:appsgenaiserver-pa.googleapis.com
+full:browser-intake-datadoghq.com:@ads,@telemetry
 full:cloudaicompanion.googleapis.com
 full:cloudcode-pa.googleapis.com
 full:copilot-proxy.githubusercontent.com
@@ -189,8 +198,8 @@ full:geminiweb-pa.clients.google.com
 full:geminiweb-pa.clients6.google.com
 full:notebooklm-pa.googleapis.com
 full:notebooklm.googleapis.com
-full:o33249.ingest.sentry.io:@ads
-full:o33249.ingest.us.sentry.io:@ads
+full:o33249.ingest.sentry.io:@ads,@telemetry
+full:o33249.ingest.us.sentry.io:@ads,@telemetry
 full:openai.qualtrics.com:@ads
 full:openaiapi-site.azureedge.net
 full:openaiassets.blob.core.windows.net
