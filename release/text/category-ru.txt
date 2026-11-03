@@ -75,6 +75,7 @@ domain:beget.app
 domain:beget.cloud
 domain:beget.com
 domain:beget.de
+domain:beget.email
 domain:beget.hosting
 domain:beget.pro
 domain:beget.tech
@@ -917,6 +918,7 @@ domain:ydb.tech
 domain:yndx.net
 domain:youla.io
 domain:yourgood.app
+domain:zapishu.me
 domain:zvuk-b2b.com
 domain:zvuk.com
 full:1l-hit.mail.ru:@ads
